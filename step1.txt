@@ -1,0 +1,121 @@
+from PyQt5.QtWidgets import QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsEllipseItem, QGraphicsLineItem
+from PyQt5.QtGui import QPainter, QPolygonF, QPen
+from PyQt5.QtCore import QRectF, QPointF, Qt
+
+class DrawingCanvas(QGraphicsView):
+    def __init__(self):
+        super().__init__()
+        self.scene = QGraphicsScene()
+        self.setScene(self.scene)
+        self.setRenderHint(QPainter.Antialiasing)
+        self.setSceneRect(QRectF(0, 0, 800, 600))  # Set the canvas size
+        
+        self.current_shape = None  # To hold the current shape being drawn
+        self.start_point = None    # To record the initial click point
+        self.current_item = None   # The item being drawn
+        self.shape_type = None     # The shape type to draw
+        
+    def set_shape_type(self, shape_type):
+        self.shape_type = shape_type
+    
+    # Mouse press event to start drawing
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and self.shape_type:
+            self.start_point = self.mapToScene(event.pos())
+            if self.shape_type == 'rectangle':
+                self.current_item = QGraphicsRectItem(QRectF(self.start_point, self.start_point))
+                self.current_item.setPen(QPen(Qt.black, 2))
+                self.scene.addItem(self.current_item)
+            elif self.shape_type == 'circle':
+                self.current_item = QGraphicsEllipseItem(QRectF(self.start_point, self.start_point))
+                self.current_item.setPen(QPen(Qt.black, 2))
+                self.scene.addItem(self.current_item)
+            elif self.shape_type == 'line':
+                self.current_item = QGraphicsLineItem(self.start_point.x(), self.start_point.y(), self.start_point.x(), self.start_point.y())
+                self.current_item.setPen(QPen(Qt.black, 2))
+                self.scene.addItem(self.current_item)
+            elif self.shape_type == 'polygon':
+                # Implement polygon drawing logic (e.g., click multiple points to form a polygon)
+                pass
+    
+    # Mouse move event to dynamically resize the shape while dragging
+    def mouseMoveEvent(self, event):
+        if self.current_item and self.shape_type:
+            current_point = self.mapToScene(event.pos())
+            if self.shape_type == 'rectangle':
+                self.current_item.setRect(QRectF(self.start_point, current_point).normalized())
+            elif self.shape_type == 'circle':
+                self.current_item.setRect(QRectF(self.start_point, current_point).normalized())
+            elif self.shape_type == 'line':
+                self.current_item.setLine(self.start_point.x(), self.start_point.y(), current_point.x(), current_point.y())
+    
+    # Mouse release event to finalize the shape drawing
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.current_item = None  # Reset after finishing the drawing
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Drawing Shapes with Mouse Events")
+        self.setGeometry(100, 100, 1000, 700)
+        
+        # Initialize the canvas where shapes will be drawn
+        self.canvas = DrawingCanvas()
+        self.setCentralWidget(self.canvas)
+        
+        # Set up the toolbar for different shape actions
+        self.create_toolbar()
+        
+        # Set up the layer management sidebar
+        self.create_layer_management()
+    
+    def create_toolbar(self):
+        toolbar = QToolBar("Shapes Toolbar")
+        self.addToolBar(Qt.LeftToolBarArea, toolbar)
+        
+        # Add buttons for different shapes
+        rect_action = QAction("Rectangle", self)
+        rect_action.triggered.connect(lambda: self.canvas.set_shape_type('rectangle'))
+        toolbar.addAction(rect_action)
+        
+        line_action = QAction("Line", self)
+        line_action.triggered.connect(lambda: self.canvas.set_shape_type('line'))
+        toolbar.addAction(line_action)
+        
+        circle_action = QAction("Circle", self)
+        circle_action.triggered.connect(lambda: self.canvas.set_shape_type('circle'))
+        toolbar.addAction(circle_action)
+        
+        polygon_action = QAction("Polygon", self)
+        polygon_action.triggered.connect(lambda: self.canvas.set_shape_type('polygon'))
+        toolbar.addAction(polygon_action)
+    
+    def create_layer_management(self):
+        layer_dock = QDockWidget("Layer Management", self)
+        layer_dock.setAllowedAreas(Qt.RightDockWidgetArea)
+        
+        layer_widget = QWidget()
+        layout = QVBoxLayout()
+        
+        # Create a list widget to manage layers
+        layer_list = QListWidget()
+        layer_list.addItem("Layer 1")
+        layer_list.addItem("Layer 2")
+        layout.addWidget(layer_list)
+        
+        # Layer visibility and other management options
+        instructions = QLabel("Right-click to toggle visibility, add, or delete layers.")
+        layout.addWidget(instructions)
+        
+        layer_widget.setLayout(layout)
+        layer_dock.setWidget(layer_widget)
+        
+        # Add dockable layer management to the right side of the window
+        self.addDockWidget(Qt.RightDockWidgetArea, layer_dock)
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec_())

@@ -1,0 +1,208 @@
+from PyQt5.QtWidgets import (
+    QGraphicsView, QGraphicsScene, QGraphicsRectItem, QGraphicsEllipseItem, 
+    QGraphicsLineItem, QGraphicsPolygonItem, QMainWindow, QVBoxLayout, QWidget, 
+    QPushButton, QListWidget, QLineEdit, QHBoxLayout, QAction, QLabel, QApplication, QGroupBox
+)
+from PyQt5.QtGui import QPainter, QPolygonF, QPen
+from PyQt5.QtCore import QRectF, QPointF, Qt
+import sys
+
+
+class DrawingCanvas(QGraphicsView):
+    def __init__(self):
+        super().__init__()
+        self.scene = QGraphicsScene()
+        self.setScene(self.scene)
+        self.setRenderHint(QPainter.Antialiasing)
+        self.setSceneRect(QRectF(0, 0, 800, 600))  # Set the canvas size
+
+        self.current_shape = None  # To hold the current shape being drawn
+        self.start_point = None    # To record the initial click point
+        self.current_item = None   # The item being drawn
+        self.shape_type = None     # The shape type to draw
+        self.polygon_points = []   # List to store points for the polygon
+        self.temp_polygon = None   # Temporary polygon item for dynamic drawing
+        self.current_layer = None  # The current layer where objects are drawn
+
+    def set_shape_type(self, shape_type):
+        self.shape_type = shape_type
+        if shape_type != 'polygon':
+            self.polygon_points.clear()  # Clear polygon points when switching away
+
+    def set_current_layer(self, layer):
+        self.current_layer = layer
+
+    # Mouse press event to start drawing
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and self.shape_type and self.current_layer:
+            self.start_point = self.mapToScene(event.pos())
+            if self.shape_type == 'rectangle':
+                self.current_item = QGraphicsRectItem(QRectF(self.start_point, self.start_point))
+            elif self.shape_type == 'circle':
+                self.current_item = QGraphicsEllipseItem(QRectF(self.start_point, self.start_point))
+            elif self.shape_type == 'line':
+                self.current_item = QGraphicsLineItem(self.start_point.x(), self.start_point.y(),
+                                                      self.start_point.x(), self.start_point.y())
+            elif self.shape_type == 'polygon':
+                self.polygon_points.append(self.start_point)
+                if len(self.polygon_points) > 1 and self.temp_polygon:
+                    self.scene.removeItem(self.temp_polygon)
+                self.temp_polygon = QGraphicsPolygonItem(QPolygonF(self.polygon_points))
+                self.temp_polygon.setPen(QPen(Qt.black, 2))
+                self.current_layer.addToGroup(self.temp_polygon)
+                return
+
+            # Set pen and add the shape to the current layer
+            if self.current_item:
+                self.current_item.setPen(QPen(Qt.black, 2))
+                self.current_layer.addToGroup(self.current_item)
+
+    # Mouse move event to dynamically resize the shape while dragging
+    def mouseMoveEvent(self, event):
+        if self.current_item and self.shape_type:
+            current_point = self.mapToScene(event.pos())
+            if self.shape_type == 'rectangle' or self.shape_type == 'circle':
+                self.current_item.setRect(QRectF(self.start_point, current_point).normalized())
+            elif self.shape_type == 'line':
+                self.current_item.setLine(self.start_point.x(), self.start_point.y(), current_point.x(), current_point.y())
+
+    # Mouse release event to finalize the shape drawing
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.current_item = None  # Reset after finishing the drawing
+
+    # Mouse double-click event to finish polygon drawing
+    def mouseDoubleClickEvent(self, event):
+        if self.shape_type == 'polygon' and self.polygon_points:
+            final_polygon = QGraphicsPolygonItem(QPolygonF(self.polygon_points))
+            final_polygon.setPen(QPen(Qt.black, 2))
+            self.current_layer.addToGroup(final_polygon)
+            self.polygon_points.clear()
+            if self.temp_polygon:
+                self.scene.removeItem(self.temp_polygon)
+                self.temp_polygon = None
+
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Drawing with Layer Management")
+        self.setGeometry(100, 100, 1200, 700)
+
+        self.canvas = DrawingCanvas()
+        self.setCentralWidget(self.canvas)
+
+        self.layers = {}  # Stores layers
+        self.current_layer_name = None
+
+        # Main Layout
+        main_layout = QHBoxLayout()
+
+        # Layer Management Panel
+        self.layer_management_panel = self.create_layer_management()
+        main_layout.addWidget(self.layer_management_panel)
+
+        # Canvas Area
+        canvas_widget = QWidget()
+        canvas_layout = QVBoxLayout()
+        canvas_layout.addWidget(self.canvas)
+        canvas_widget.setLayout(canvas_layout)
+        main_layout.addWidget(canvas_widget)
+
+        # Set the layout for the main window
+        container_widget = QWidget()
+        container_widget.setLayout(main_layout)
+        self.setCentralWidget(container_widget)
+
+        self.create_toolbar()
+
+    def create_layer_management(self):
+        # Layer Management Section
+        layer_management_group = QGroupBox("Layer Management")
+        layer_management_layout = QVBoxLayout()
+
+        # Add Layer Input
+        self.layer_input = QLineEdit(self)
+        self.layer_input.setPlaceholderText("Enter Layer Name")
+        layer_management_layout.addWidget(self.layer_input)
+
+        # Add Layer Button
+        add_layer_button = QPushButton("Add Layer", self)
+        add_layer_button.clicked.connect(self.add_layer)
+        layer_management_layout.addWidget(add_layer_button)
+
+        # Delete Layer Button
+        delete_layer_button = QPushButton("Delete Layer", self)
+        delete_layer_button.clicked.connect(self.delete_layer)
+        layer_management_layout.addWidget(delete_layer_button)
+
+        # Layer List
+        self.layer_list = QListWidget(self)
+        self.layer_list.clicked.connect(self.select_layer)
+        layer_management_layout.addWidget(self.layer_list)
+
+        # Layer Visibility Toggle
+        toggle_visibility_button = QPushButton("Toggle Visibility", self)
+        toggle_visibility_button.clicked.connect(self.toggle_layer_visibility)
+        layer_management_layout.addWidget(toggle_visibility_button)
+
+        layer_management_group.setLayout(layer_management_layout)
+        return layer_management_group
+
+    def create_toolbar(self):
+        toolbar = self.addToolBar("Shapes Toolbar")
+
+        rect_action = QAction("Rectangle", self)
+        rect_action.triggered.connect(lambda: self.canvas.set_shape_type('rectangle'))
+        toolbar.addAction(rect_action)
+
+        line_action = QAction("Line", self)
+        line_action.triggered.connect(lambda: self.canvas.set_shape_type('line'))
+        toolbar.addAction(line_action)
+
+        circle_action = QAction("Circle", self)
+        circle_action.triggered.connect(lambda: self.canvas.set_shape_type('circle'))
+        toolbar.addAction(circle_action)
+
+        polygon_action = QAction("Polygon", self)
+        polygon_action.triggered.connect(lambda: self.canvas.set_shape_type('polygon'))
+        toolbar.addAction(polygon_action)
+
+    def add_layer(self):
+        layer_name = self.layer_input.text()
+        if layer_name and layer_name not in self.layers:
+            new_layer = self.canvas.scene.createItemGroup([])  # Create an empty layer
+            self.layers[layer_name] = new_layer
+            self.layer_list.addItem(layer_name)
+            self.layer_input.clear()
+
+    def delete_layer(self):
+        selected_item = self.layer_list.currentItem()
+        if selected_item:
+            layer_name = selected_item.text()
+            layer = self.layers.get(layer_name)
+            if layer:
+                self.canvas.scene.removeItem(layer)
+                del self.layers[layer_name]
+                self.layer_list.takeItem(self.layer_list.currentRow())
+
+    def select_layer(self):
+        selected_item = self.layer_list.currentItem()
+        if selected_item:
+            self.current_layer_name = selected_item.text()
+            self.canvas.set_current_layer(self.layers[self.current_layer_name])
+
+    def toggle_layer_visibility(self):
+        selected_item = self.layer_list.currentItem()
+        if selected_item:
+            layer_name = selected_item.text()
+            layer = self.layers.get(layer_name)
+            if layer:
+                layer.setVisible(not layer.isVisible())
+
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec_())
